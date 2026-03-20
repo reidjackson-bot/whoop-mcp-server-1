@@ -236,7 +236,7 @@ export class WhoopClient {
   private async apiRequest<T>(path: string, params?: Record<string, string>): Promise<T> {
     await this.ensureAuth();
 
-    const url = new URL(`https://api.prod.whoop.com/developer/v1${path}`);
+    const url = new URL(`https://api.prod.whoop.com/developer/v2${path}`);
     if (params) {
       Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
     }
