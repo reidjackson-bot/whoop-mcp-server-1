@@ -141,6 +141,7 @@ export class WhoopClient {
     this.clientId = clientId;
     this.clientSecret = clientSecret;
     this.redirectUri = redirectUri;
+    this.tokens = loadTokens();
   }
 
   get isAuthenticated(): boolean {
@@ -182,6 +183,7 @@ export class WhoopClient {
     };
 
     console.log('[WHOOP] Authenticated successfully');
+    saveTokens(this.tokens);
   }
 
   private async refreshTokens(): Promise<void> {
@@ -219,6 +221,7 @@ export class WhoopClient {
     };
 
     console.log('[WHOOP] Token refreshed successfully');
+    saveTokens(this.tokens);
   }
 
   private async ensureAuth(): Promise<void> {
