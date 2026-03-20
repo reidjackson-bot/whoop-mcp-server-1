@@ -1,7 +1,37 @@
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+
+const TOKEN_PATH = process.env.TOKEN_PATH || '/data/whoop-tokens.json';
+
 interface WhoopTokens {
   access_token: string;
   refresh_token: string;
   expires_at: number;
+}
+
+function saveTokens(tokens: WhoopTokens): void {
+  try {
+    const dir = TOKEN_PATH.substring(0, TOKEN_PATH.lastIndexOf('/'));
+    if (dir && !existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
+    console.log('[WHOOP] Tokens saved to disk');
+  } catch (err) {
+    console.error('[WHOOP] Failed to save tokens:', err);
+  }
+}
+
+function loadTokens(): WhoopTokens | null {
+  try {
+    if (existsSync(TOKEN_PATH)) {
+      const data = readFileSync(TOKEN_PATH, 'utf-8');
+      console.log('[WHOOP] Tokens loaded from disk');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('[WHOOP] Failed to load tokens:', err);
+  }
+  return null;
 }
 
 interface WhoopCycle {
