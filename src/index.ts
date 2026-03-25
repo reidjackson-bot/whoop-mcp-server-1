@@ -274,7 +274,8 @@ function createServer(): McpServer {
     async () => {
       try {
         const today = new Date().toISOString().split('T')[0];
-        const { start, end } = getDateRange(today, today);
+        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const { start, end } = getDateRange(yesterday, today);
         const params = { start, end, limit: '1' };
 
         const [cycles, recoveries, sleeps, workouts] = await Promise.all([
