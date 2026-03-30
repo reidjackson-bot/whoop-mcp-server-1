@@ -89,7 +89,6 @@ async function refreshAccessToken(): Promise<string> {
           refresh_token: currentRefreshToken,
           client_id: clientId,
           client_secret: clientSecret,
-          scope: 'offline read:recovery read:cycles read:workout read:sleep read:profile read:body_measurement',
         }),
       });
 
