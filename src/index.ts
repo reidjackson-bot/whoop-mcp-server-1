@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import express from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -20,6 +21,42 @@ let tokenStore: TokenStore | null = null;
 // Internal API token (for healthspan - uses email/password via Cognito)
 let internalToken: string | null = null;
 let internalTokenExpiresAt: number = 0;
+
+// ─── Token Persistence ──────────────────────────────────────────────────────
+const TOKEN_PATH = process.env.TOKEN_PATH || '/data/whoop-tokens.json';
+
+function saveTokensToDisk(): void {
+  if (!tokenStore) return;
+  try {
+    const dir = TOKEN_PATH.substring(0, TOKEN_PATH.lastIndexOf('/'));
+    if (dir && !existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    writeFileSync(TOKEN_PATH, JSON.stringify(tokenStore));
+    console.log('[AUTH] Tokens saved to disk at', TOKEN_PATH);
+  } catch (err) {
+    console.error('[AUTH] Failed to save tokens to disk:', err);
+  }
+}
+
+function loadTokensFromDisk(): void {
+  try {
+    if (existsSync(TOKEN_PATH)) {
+      const data = readFileSync(TOKEN_PATH, 'utf-8');
+      tokenStore = JSON.parse(data);
+      console.log('[AUTH] Tokens loaded from disk - authenticated:', !!tokenStore);
+    } else {
+      console.log('[AUTH] No token file found at', TOKEN_PATH);
+    }
+  } catch (err) {
+    console.error('[AUTH] Failed to load tokens from disk:', err);
+  }
+}
+
+// Load tokens on startup
+loadTokensFromDisk();
+
+// ─── Token Refresh Logic ─────────────────────────────────────────────────────
 
 function isTokenExpired(): boolean {
   if (!tokenStore) return true;
@@ -62,6 +99,7 @@ async function refreshAccessToken(): Promise<string> {
         if (attempt === 3) {
           // On final failure, clear tokens so user knows to re-auth
           tokenStore = null;
+          saveTokensToDisk();
           throw new Error(`Token refresh failed after 3 attempts. Please re-authorize at /auth. Last error: ${resp.status}`);
         }
         await new Promise(r => setTimeout(r, 1000 * attempt)); // backoff
@@ -81,6 +119,7 @@ async function refreshAccessToken(): Promise<string> {
       };
 
       console.log(`[AUTH] Token refreshed, expires in ${data.expires_in}s`);
+      saveTokensToDisk();
       return tokenStore.access_token;
     } catch (err) {
       if (attempt === 3) throw err;
@@ -887,6 +926,7 @@ app.get('/callback', async (req, res) => {
     };
 
     console.log('[AUTH] Successfully authenticated with WHOOP');
+    saveTokensToDisk();
     res.json({ status: 'success', message: 'WHOOP account connected! You can close this window.' });
   } catch (error) {
     console.error('[AUTH] Error exchanging code:', error);
@@ -943,5 +983,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`[WHOOP MCP] MCP endpoint: http://0.0.0.0:${PORT}/mcp`);
   console.log(`[WHOOP MCP] Health check: http://0.0.0.0:${PORT}/health`);
   console.log(`[WHOOP MCP] Auth: http://0.0.0.0:${PORT}/auth`);
+  console.log(`[WHOOP MCP] Token persistence: ${TOKEN_PATH}`);
   console.log(`[WHOOP MCP] Healthspan: ${process.env.WHOOP_EMAIL ? 'enabled' : 'disabled (set WHOOP_EMAIL + WHOOP_PASSWORD)'}`);
 });
