@@ -56,6 +56,14 @@ function loadTokensFromDisk(): void {
 // Load tokens on startup
 loadTokensFromDisk();
 
+// If we loaded tokens from disk, immediately try to refresh to validate them
+if (tokenStore) {
+  console.log('[AUTH] Tokens found on disk, refreshing immediately to validate...');
+  refreshAccessToken()
+    .then(() => console.log('[AUTH] Startup refresh succeeded - tokens are valid'))
+    .catch((err) => console.error('[AUTH] Startup refresh failed - may need re-auth:', err));
+}
+
 // ─── Token Refresh Logic ─────────────────────────────────────────────────────
 
 function isTokenExpired(): boolean {
@@ -63,6 +71,25 @@ function isTokenExpired(): boolean {
   // Refresh 5 minutes before expiry for safety margin
   return Date.now() > tokenStore.expires_at - 5 * 60 * 1000;
 }
+
+// ─── Proactive Background Refresh ───────────────────────────────────────────
+// Refresh token every 45 minutes to keep it alive, even when no requests come in.
+// This prevents the refresh token from going stale during idle periods.
+const PROACTIVE_REFRESH_INTERVAL = 45 * 60 * 1000; // 45 minutes
+
+setInterval(async () => {
+  if (!tokenStore) {
+    console.log('[AUTH] Background refresh skipped - not authenticated');
+    return;
+  }
+  try {
+    console.log('[AUTH] Background proactive refresh starting...');
+    await refreshAccessToken();
+    console.log('[AUTH] Background proactive refresh succeeded');
+  } catch (err) {
+    console.error('[AUTH] Background proactive refresh FAILED:', err);
+  }
+}, PROACTIVE_REFRESH_INTERVAL);
 
 async function refreshAccessToken(): Promise<string> {
   if (!tokenStore || !tokenStore.refresh_token) {
@@ -96,10 +123,10 @@ async function refreshAccessToken(): Promise<string> {
         const errText = await resp.text();
         console.error(`[AUTH] Refresh attempt ${attempt} failed: ${resp.status} ${errText}`);
         if (attempt === 3) {
-          // On final failure, clear tokens so user knows to re-auth
-          tokenStore = null;
-          saveTokensToDisk();
-          throw new Error(`Token refresh failed after 3 attempts. Please re-authorize at /auth. Last error: ${resp.status}`);
+          // DON'T clear tokens on failure — keep the refresh token on disk
+          // so we can retry later instead of requiring full re-auth
+          console.error('[AUTH] Token refresh failed after 3 attempts. Will retry on next request or background cycle.');
+          throw new Error(`Token refresh failed after 3 attempts. Last error: ${resp.status}`);
         }
         await new Promise(r => setTimeout(r, 1000 * attempt)); // backoff
         continue;
@@ -107,13 +134,14 @@ async function refreshAccessToken(): Promise<string> {
 
       const data = await resp.json() as {
         access_token: string;
-        refresh_token: string;
+        refresh_token?: string;
         expires_in: number;
       };
 
       tokenStore = {
         access_token: data.access_token,
-        refresh_token: data.refresh_token,
+        // Preserve existing refresh token if Whoop doesn't return a new one
+        refresh_token: data.refresh_token || currentRefreshToken,
         expires_at: Date.now() + data.expires_in * 1000,
       };
 
